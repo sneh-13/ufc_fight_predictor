@@ -1,0 +1,328 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# # UFC Stats Web Scraper
+# This notebook scrapes fighter data from ufcstats.com
+
+# ## 1. Import Required Libraries
+
+import requests
+from bs4 import BeautifulSoup
+import pandas as pd
+import time
+import re
+from datetime import datetime
+import warnings
+warnings.filterwarnings('ignore')
+
+# ## 2. Define Helper Functions
+
+def get_soup(url, max_retries=3):
+    """Get BeautifulSoup object from URL with retry logic"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url, headers=headers)
+            if response.status_code == 200:
+                return BeautifulSoup(response.content, 'html.parser')
+            else:
+                print(f"Status code {response.status_code} for {url}")
+                time.sleep(2)
+        except Exception as e:
+            print(f"Error fetching {url}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(5)
+    return None
+
+def clean_text(text):
+    """Clean and normalize text data"""
+    if text:
+        return re.sub(r'\s+', ' ', text.strip())
+    return ''
+
+def parse_percentage(text):
+    """Convert percentage text to float"""
+    if text and '%' in text:
+        return float(text.replace('%', '').strip())
+    return None
+
+# ## 3. Scrape Fighter List
+
+def get_all_fighters():
+    """Get list of all fighters from the main page"""
+    base_url = "http://ufcstats.com/statistics/fighters"
+    fighters_data = []
+    
+    # Get all letter pages (a-z)
+    for letter in 'abcdefghijklmnopqrstuvwxyz':
+        url = f"{base_url}?char={letter}&page=all"
+        print(f"Scraping fighters starting with '{letter.upper()}'...")
+        
+        soup = get_soup(url)
+        if not soup:
+            continue
+        
+        # Find fighter table
+        table = soup.find('table', class_='b-statistics__table')
+        if not table:
+            continue
+        
+        rows = table.find_all('tr')[1:]  # Skip header row
+        
+        for row in rows:
+            cols = row.find_all('td')
+            if len(cols) >= 11:
+                fighter_info = {
+                    'name': clean_text(cols[0].text),
+                    'lastname' : clean_text(cols[1].text),
+                    'fighter_url': cols[0].find('a')['href'] if cols[0].find('a') else None,
+                    'nickname': clean_text(cols[2].text),
+                    'height': clean_text(cols[3].text),
+                    'weight': clean_text(cols[4].text),
+                    'reach': clean_text(cols[5].text),
+                    'stance': clean_text(cols[6].text),
+                    'wins': clean_text(cols[7].text),
+                    'losses': clean_text(cols[8].text),
+                    'draws': clean_text(cols[9].text),
+                    'belt': clean_text(cols[10].text),
+                }
+                fighters_data.append(fighter_info)
+        
+        # Be respectful with request rate
+        time.sleep(1)
+    
+    print(f"Total fighters found: {len(fighters_data)}")
+    return fighters_data
+
+# ## 4. Scrape Detailed Fighter Stats
+
+def get_fighter_details(fighter_url):
+    """Get detailed stats for a specific fighter"""
+    soup = get_soup(fighter_url)
+    if not soup:
+        return {}
+    
+    details = {}
+    
+    # Get fighter name
+    name_elem = soup.find('span', class_='b-content__title-highlight')
+    details['full_name'] = clean_text(name_elem.text) if name_elem else ''
+    
+    # Get record
+    record_elem = soup.find('span', class_='b-content__title-record')
+    details['record'] = clean_text(record_elem.text) if record_elem else ''
+    
+    # Get bio information
+    bio_box = soup.find('div', class_='b-list__info-box')
+    if bio_box:
+        bio_items = bio_box.find_all('li', class_='b-list__box-list-item')
+        for item in bio_items:
+            label_elem = item.find('i')
+            if label_elem:
+                label = clean_text(label_elem.next_sibling)
+                if 'Height:' in label:
+                    details['height_detail'] = label.replace('Height:', '').strip()
+                elif 'Weight:' in label:
+                    details['weight_detail'] = label.replace('Weight:', '').strip()
+                elif 'Reach:' in label:
+                    details['reach_detail'] = label.replace('Reach:', '').strip()
+                elif 'STANCE:' in label:
+                    details['stance_detail'] = label.replace('STANCE:', '').strip()
+                elif 'DOB:' in label:
+                    details['dob'] = label.replace('DOB:', '').strip()
+    
+    # Get career statistics
+    career_stats = soup.find_all('div', class_='b-list__info-box-left')
+    for stat_box in career_stats:
+        stat_items = stat_box.find_all('li', class_='b-list__box-list-item')
+        for item in stat_items:
+            label_elem = item.find('i')
+            if label_elem and label_elem.text:
+                label = clean_text(label_elem.text)
+                value = clean_text(item.text.replace(label, ''))
+                
+                if 'SLpM' in label:
+                    details['strikes_landed_per_min'] = value
+                elif 'Str. Acc' in label:
+                    details['striking_accuracy'] = value
+                elif 'SApM' in label:
+                    details['strikes_absorbed_per_min'] = value
+                elif 'Str. Def' in label:
+                    details['striking_defense'] = value
+                elif 'TD Avg' in label:
+                    details['takedown_avg'] = value
+                elif 'TD Acc' in label:
+                    details['takedown_accuracy'] = value
+                elif 'TD Def' in label:
+                    details['takedown_defense'] = value
+                elif 'Sub. Avg' in label:
+                    details['submission_avg'] = value
+    
+    return details
+
+# ## 5. Scrape Fight History
+
+def get_fighter_fights(fighter_url):
+    """Get all fights for a specific fighter"""
+    soup = get_soup(fighter_url)
+    if not soup:
+        return []
+    
+    fights = []
+    fight_table = soup.find('table', class_='b-fight-details__table')
+    
+    if not fight_table:
+        return fights
+    
+    rows = fight_table.find('tbody').find_all('tr')
+    
+    for row in rows:
+        cols = row.find_all('td')
+        if len(cols) >= 10:
+            fight = {
+                'result': clean_text(cols[0].text),
+                'opponent': clean_text(cols[1].text),
+                'event': clean_text(cols[2].text),
+                'date': clean_text(cols[3].text),
+                'method': clean_text(cols[4].text),
+                'round': clean_text(cols[5].text),
+                'time': clean_text(cols[6].text),
+                'str_landed': clean_text(cols[7].text),
+                'td_landed': clean_text(cols[8].text),
+                'sub_att': clean_text(cols[9].text),
+            }
+            fights.append(fight)
+    
+    return fights
+
+# ## 6. Main Scraping Function
+
+def scrape_ufc_stats(limit=None):
+    """
+    Main function to scrape all UFC fighter data
+    
+    Parameters:
+    limit: Optional limit for testing (scrapes only first N fighters)
+    """
+    
+    print("=" * 50)
+    print("Starting UFC Stats Scraper")
+    print("=" * 50)
+    
+    # Step 1: Get all fighters
+    print("\n[1/3] Getting fighter list...")
+    fighters = get_all_fighters()
+    
+    if limit:
+        fighters = fighters[:limit]
+        print(f"Limiting to {limit} fighters for testing")
+    
+    all_fighter_data = []
+    all_fight_data = []
+    
+    # Step 2: Get detailed stats for each fighter
+    print(f"\n[2/3] Getting detailed stats for {len(fighters)} fighters...")
+    print("This may take a while. Please be patient...")
+    
+    for idx, fighter in enumerate(fighters, 1):
+        if fighter['fighter_url']:
+            print(f"Processing {idx}/{len(fighters)}: {fighter['name']}")
+            
+            # Get detailed stats
+            details = get_fighter_details(fighter['fighter_url'])
+            fighter_full = {**fighter, **details}
+            all_fighter_data.append(fighter_full)
+            
+            # Get fight history
+            fights = get_fighter_fights(fighter['fighter_url'])
+            for fight in fights:
+                fight['fighter_name'] = fighter['name']
+                fight['fighter_url'] = fighter['fighter_url']
+                all_fight_data.append(fight)
+            
+            # Rate limiting
+            time.sleep(1.5)
+            
+            # Progress update every 10 fighters
+            if idx % 10 == 0:
+                print(f"  Progress: {idx}/{len(fighters)} fighters processed")
+    
+    # Step 3: Create DataFrames and save to CSV
+    print("\n[3/3] Creating CSV files...")
+    
+    # Fighter stats CSV
+    fighters_df = pd.DataFrame(all_fighter_data)
+    fighters_df.to_csv('ufc_fighters_stats.csv', index=False)
+    print(f"✓ Saved {len(fighters_df)} fighters to 'ufc_fighters_stats.csv'")
+    
+    # Fight history CSV
+    fights_df = pd.DataFrame(all_fight_data)
+    fights_df.to_csv('ufc_fights_history.csv', index=False)
+    print(f"✓ Saved {len(fights_df)} fights to 'ufc_fights_history.csv'")
+    
+    # Combined comprehensive CSV
+    comprehensive_data = []
+    for fighter in all_fighter_data:
+        fighter_fights = [f for f in all_fight_data if f['fighter_name'] == fighter['name']]
+        fighter['total_ufc_fights'] = len(fighter_fights)
+        fighter['fight_history'] = str(fighter_fights) if fighter_fights else ''
+        comprehensive_data.append(fighter)
+    
+    comprehensive_df = pd.DataFrame(comprehensive_data)
+    comprehensive_df.to_csv('ufc_comprehensive_data.csv', index=False)
+    print(f"✓ Saved comprehensive data to 'ufc_comprehensive_data.csv'")
+    
+    print("\n" + "=" * 50)
+    print("Scraping completed successfully!")
+    print("=" * 50)
+    
+    return fighters_df, fights_df, comprehensive_df
+
+# ## 7. Run the Scraper
+
+# Test with a small number first (e.g., 10 fighters)
+# Remove the limit parameter to scrape all fighters
+print("Starting test run with 10 fighters...")
+print("To scrape ALL fighters, change limit=10 to limit=None")
+print("WARNING: Full scraping may take several hours\n")
+
+fighters_df, fights_df, comprehensive_df = scrape_ufc_stats(limit=10)
+
+# ## 8. Display Sample Data
+
+print("\n" + "=" * 50)
+print("SAMPLE DATA")
+print("=" * 50)
+
+print("\n### Fighter Stats Sample:")
+print(fighters_df.head())
+
+print("\n### Fight History Sample:")
+print(fights_df.head())
+
+print(f"\n### Summary:")
+print(f"Total fighters scraped: {len(fighters_df)}")
+print(f"Total fights recorded: {len(fights_df)}")
+print(f"Average fights per fighter: {len(fights_df)/len(fighters_df):.1f}")
+
+# ## 9. Data Quality Check
+
+print("\n" + "=" * 50)
+print("DATA QUALITY CHECK")
+print("=" * 50)
+
+print("\n### Missing Values in Fighter Stats:")
+print(fighters_df.isnull().sum())
+
+print("\n### Data Types:")
+print(fighters_df.dtypes)
+
+print("\n### Files created:")
+print("1. ufc_fighters_stats.csv - Fighter profiles and statistics")
+print("2. ufc_fights_history.csv - Detailed fight records")
+print("3. ufc_comprehensive_data.csv - Combined comprehensive dataset")
+
+print("\n✅ Scraping complete! Check your working directory for the CSV files.")
