@@ -1,3 +1,5 @@
+#Sneh: code used to cleanup scraper data (object variables -> numeric varaibles)
+
 import pandas as pd
 import numpy as np
 
