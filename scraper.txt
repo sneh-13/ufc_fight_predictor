@@ -1,3 +1,5 @@
+# Code for current Scraper
+
 #!/usr/bin/env python
 # coding: utf-8
 
@@ -16,6 +18,16 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ## 2. Define Helper Functions
+
+import re
+
+def strip_label(full_text, label_with_colon):
+    """Remove a leading 'Label:' (case-insensitive) from 'Label: value'."""
+    if not full_text:
+        return ''
+    pattern = r'^\s*' + re.escape(label_with_colon) + r'\s*'
+    return re.sub(pattern, '', full_text, flags=re.IGNORECASE).strip()
+
 
 def get_soup(url, max_retries=3):
     """Get BeautifulSoup object from URL with retry logic"""
@@ -111,28 +123,35 @@ def get_fighter_details(fighter_url):
     name_elem = soup.find('span', class_='b-content__title-highlight')
     details['full_name'] = clean_text(name_elem.text) if name_elem else ''
     
-    # Get record
-    record_elem = soup.find('span', class_='b-content__title-record')
-    details['record'] = clean_text(record_elem.text) if record_elem else ''
-    
+
     # Get bio information
     bio_box = soup.find('div', class_='b-list__info-box')
     if bio_box:
         bio_items = bio_box.find_all('li', class_='b-list__box-list-item')
         for item in bio_items:
-            label_elem = item.find('i')
-            if label_elem:
-                label = clean_text(label_elem.next_sibling)
-                if 'Height:' in label:
-                    details['height_detail'] = label.replace('Height:', '').strip()
-                elif 'Weight:' in label:
-                    details['weight_detail'] = label.replace('Weight:', '').strip()
-                elif 'Reach:' in label:
-                    details['reach_detail'] = label.replace('Reach:', '').strip()
-                elif 'STANCE:' in label:
-                    details['stance_detail'] = label.replace('STANCE:', '').strip()
-                elif 'DOB:' in label:
-                    details['dob'] = label.replace('DOB:', '').strip()
+            label_tag = item.find('i')
+            if not label_tag:
+                continue
+
+            label_raw = clean_text(label_tag.text)          # e.g., 'DOB:'
+            label_key = label_raw.rstrip(':').lower()       # 'dob'
+
+            # Full text still includes the label; strip it out
+            value_full = clean_text(item.get_text(separator=' '))
+            value_only = strip_label(value_full, label_raw) # e.g., 'Jan 01, 1990'
+
+            if label_key == 'height':
+                details['height_detail'] = value_only
+            elif label_key == 'weight':
+                details['weight_detail'] = value_only
+            elif label_key == 'reach':
+                details['reach_detail'] = value_only
+            elif label_key == 'stance':
+                details['stance_detail'] = value_only
+            elif label_key == 'dob':
+                details['dob'] = value_only
+
+
     
     # Get career statistics
     career_stats = soup.find_all('div', class_='b-list__info-box-left')

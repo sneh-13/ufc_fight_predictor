@@ -1,179 +1,221 @@
-#Sneh: code used to cleanup scraper data (object variables -> numeric varaibles)
+import logging
+import re
+from typing import Callable, Dict, Iterable, Optional
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-# Load the data
-matches = pd.read_csv("ufc_comprehensive_data.csv", index_col=0)
+# --------------------------- Config / Globals --------------------------- #
 
-# Create a copy to work with
-matches_cleaned = matches.copy()
+INPUT_CSV  = "ufc_comprehensive_data.csv"
+OUTPUT_CSV = "ufc_data_numeric_converted.csv"
 
-# Function to clean and convert height to inches
-def clean_height(height_str):
-    if pd.isna(height_str) or height_str == '':
-        return np.nan
-    height_str = str(height_str).strip()
-    
-    # Check if it's in feet and inches format (e.g., "5'11")
-    if "'" in height_str:
-        try:
-            parts = height_str.replace('"', '').split("'")
-            feet = float(parts[0])
-            inches = float(parts[1]) if len(parts) > 1 and parts[1] else 0
-            total_inches = feet * 12 + inches
-            return total_inches
-        except:
-            return np.nan
-    else:
-        # Already in inches
-        try:
-            inches = float(height_str.replace('"', '').replace('in', '').strip())
-            return inches
-        except:
-            return np.nan
+# Use a fixed reference date (as in your original script). Make it a parameter for testability.
+REF_DATE = pd.Timestamp(2025, 10, 17)
 
-# Function to clean weight - updated to handle various formats
-def clean_weight(weight_str):
-    if pd.isna(weight_str):
-        return np.nan
-    
-    # If it's already a number (int or float), return it as float
-    if isinstance(weight_str, (int, float)):
-        return float(weight_str)
-    
-    # Convert to string and clean
-    weight_str = str(weight_str).strip()
-    
-    if weight_str == '' or weight_str.lower() == 'nan':
-        return np.nan
-    
-    try:
-        # Remove various possible formats
-        cleaned = weight_str.replace('lbs', '').replace('lb', '').replace('pounds', '').strip()
-        # Also remove any spaces that might be between number and unit
-        cleaned = cleaned.replace(' ', '')
-        return float(cleaned)
-    except:
-        # If all else fails, try to convert directly
-        try:
-            return float(weight_str)
-        except:
-            return np.nan
+# Columns that can appear and should be dropped if present
+DETAIL_COLS: tuple[str, ...] = ("height_detail", "weight_detail", "reach_detail", "stance_detail")
 
-# Function to clean reach in inches
-def clean_reach(reach_str):
-    if pd.isna(reach_str) or reach_str == '':
-        return np.nan
-    reach_str = str(reach_str).strip()
-    try:
-        # Remove quotes and 'in' if present, keep in inches
-        inches = float(reach_str.replace('"', '').replace('in', '').strip())
-        return inches
-    except:
-        return np.nan
-
-# Function to clean percentage values
-def clean_percentage(perc_str):
-    if pd.isna(perc_str) or perc_str == '':
-        return np.nan
-    perc_str = str(perc_str).strip()
-    try:
-        # Remove percentage sign and convert
-        cleaned = perc_str.replace('%', '').strip()
-        return float(cleaned)
-    except:
-        return np.nan
-
-# Debug: Check original weight column values before conversion
-print("Original weight column sample (first 10 non-null values):")
-print("-" * 40)
-weight_sample = matches['weight'].dropna().head(10)
-print(weight_sample)
-print(f"Weight column dtype: {matches['weight'].dtype}")
-print()
-
-# Convert height (inches), weight (lbs), and reach (inches)
-matches_cleaned['height'] = matches_cleaned['height'].apply(clean_height)
-matches_cleaned['weight'] = matches_cleaned['weight'].apply(clean_weight)
-matches_cleaned['reach'] = matches_cleaned['reach'].apply(clean_reach)
-
-# Convert stance to numeric (1=orthodox, 2=southpaw, 3=switch)
-stance_mapping = {
-    'orthodox': 1,
-    'southpaw': 2,
-    'switch': 3
+STANCE_MAP: Dict[str, int] = {
+    "orthodox": 1,
+    "southpaw": 2,
+    "switch":   3,
 }
 
-# Handle stance conversion (case-insensitive)
-def convert_stance(stance_str):
-    if pd.isna(stance_str) or stance_str == '':
+PERCENT_COLUMNS: tuple[str, ...] = (
+    "striking_accuracy",
+    "striking_defense",
+    "takedown_accuracy",
+    "takedown_defense",
+)
+
+# --------------------------- Logging Setup ----------------------------- #
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s:%(message)s"
+)
+log = logging.getLogger(__name__)
+
+# --------------------------- Utilities --------------------------------- #
+
+def drop_if_present(df: pd.DataFrame, cols: Iterable[str]) -> pd.DataFrame:
+    """Drop any columns from 'cols' that are present in df, ignoring the rest."""
+    present = [c for c in cols if c in df.columns]
+    if present:
+        log.info("Dropping columns: %s", present)
+        return df.drop(columns=present, errors="ignore")
+    return df
+
+def parse_height_to_inches(value: object) -> float | np.nan:
+    """
+    Accepts strings like "5'11\"", "5'11", or '71"', '71 in' and returns inches as float.
+    """
+    if pd.isna(value):
         return np.nan
-    stance_str = str(stance_str).lower().strip()
-    return stance_mapping.get(stance_str, np.nan)
+    s = str(value).strip().lower()
+    if not s or s == "nan":
+        return np.nan
 
-matches_cleaned['stance'] = matches_cleaned['stance'].apply(convert_stance)
+    # Format: 5'11 or 5'11"
+    if "'" in s:
+        try:
+            feet, inches = s.replace('"', "").split("'")
+            feet = float(feet) if feet else 0.0
+            inches = float(inches) if inches else 0.0
+            return feet * 12 + inches
+        except Exception:
+            return np.nan
 
-# Convert accuracy and defense percentages
-matches_cleaned['striking_accuracy'] = matches_cleaned['striking_accuracy'].apply(clean_percentage)
-matches_cleaned['striking_defense'] = matches_cleaned['striking_defense'].apply(clean_percentage)
-matches_cleaned['takedown_accuracy'] = matches_cleaned['takedown_accuracy'].apply(clean_percentage)
-matches_cleaned['takedown_defense'] = matches_cleaned['takedown_defense'].apply(clean_percentage)
+    # Already inches: e.g., 71, 71", 71 in
+    try:
+        s = s.replace('"', "").replace("in", "").strip()
+        return float(s)
+    except Exception:
+        return np.nan
 
-# Verify the conversions
-print("Data types after conversion:")
-print("-" * 40)
-columns_to_check = ['height', 'weight', 'reach', 'stance', 
-                    'striking_accuracy', 'striking_defense', 
-                    'takedown_accuracy', 'takedown_defense']
+def to_float_strip_units(value: object, units: Iterable[str]) -> float | np.nan:
+    """
+    Generic unit stripper: removes any of `units` (case-insensitive) and converts to float.
+    Good for weights like '170 lbs', '170lb', '170 pounds'.
+    """
+    if pd.isna(value):
+        return np.nan
+    s = str(value).strip().lower()
+    if not s or s == "nan":
+        return np.nan
+    for u in units:
+        s = s.replace(u.lower(), "")
+    s = re.sub(r"\s+", "", s)
+    try:
+        return float(s)
+    except Exception:
+        return np.nan
 
-for col in columns_to_check:
-    print(f"{col}: {matches_cleaned[col].dtype}")
+def parse_inches(value: object) -> float | np.nan:
+    """Convert strings like 72, 72", 72 in to inches (float)."""
+    return to_float_strip_units(value, units=("in", '"'))
 
-print("\nSample of converted data:")
-print("-" * 40)
-print(matches_cleaned[columns_to_check].head(10))
+def parse_weight_lbs(value: object) -> float | np.nan:
+    """Convert weight like '170 lbs', '170 lb', '170 pounds' to pounds (float)."""
+    return to_float_strip_units(value, units=("lbs", "lb", "pounds"))
 
-print("\nStatistics for numeric columns:")
-print("-" * 40)
-if matches_cleaned['height'].notna().any():
-    print(f"Height (inches): min={matches_cleaned['height'].min():.1f}, max={matches_cleaned['height'].max():.1f}, mean={matches_cleaned['height'].mean():.1f}")
-else:
-    print("Height: No valid data")
+def parse_percent(value: object) -> float | np.nan:
+    """Convert percent strings like '45%' to 45.0; returns NaN on failure."""
+    return to_float_strip_units(value, units=("%",))
 
-if matches_cleaned['weight'].notna().any():
-    print(f"Weight (lbs): min={matches_cleaned['weight'].min():.1f}, max={matches_cleaned['weight'].max():.1f}, mean={matches_cleaned['weight'].mean():.1f}")
-else:
-    print("Weight: No valid data")
+def map_stance(value: object, mapping: Dict[str, int]) -> float | np.nan:
+    """Map stance strings to integers via mapping; NaN on unknown/missing."""
+    if pd.isna(value):
+        return np.nan
+    key = str(value).strip().lower()
+    return mapping.get(key, np.nan)
 
-if matches_cleaned['reach'].notna().any():
-    print(f"Reach (inches): min={matches_cleaned['reach'].min():.1f}, max={matches_cleaned['reach'].max():.1f}, mean={matches_cleaned['reach'].mean():.1f}")
-else:
-    print("Reach: No valid data")
+def dob_series_to_age(dob: pd.Series, ref: pd.Timestamp) -> pd.Series:
+    """
+    Vectorized 'dob' (e.g., 'Jul 13, 1978') -> integer ages as of 'ref'.
+    Invalid/unparseable rows become <NA> (nullable Int64 dtype).
+    """
+    parsed = pd.to_datetime(dob.astype("string").str.strip(), format="%b %d, %Y", errors="coerce")
+    age_years = (
+        ref.year - parsed.dt.year
+        - ((ref.month, ref.day) < (parsed.dt.month, parsed.dt.day)).astype("int")
+    )
+    age_years = age_years.where(parsed.notna())  # Keep NaN when parse failed
+    return age_years.astype("Int64")
 
-print("\nMissing values in converted columns:")
-print("-" * 40)
-for col in columns_to_check:
-    missing = matches_cleaned[col].isna().sum()
-    total = len(matches_cleaned)
-    print(f"{col}: {missing} missing ({missing/total*100:.1f}%)")
+def apply_cleaners(df: pd.DataFrame, spec: Dict[str, Callable[[object], float | np.nan]]) -> pd.DataFrame:
+    """
+    Apply column->cleaner mapping (only if column exists). Returns df with cleaned columns.
+    """
+    for col, fn in spec.items():
+        if col in df.columns:
+            log.info("Cleaning column: %s", col)
+            df[col] = df[col].apply(fn)
+        else:
+            log.info("Column not found (skipped): %s", col)
+    return df
 
-# Additional debug for weight column if still having issues
-print("\nWeight column debugging:")
-print("-" * 40)
-print(f"Total rows: {len(matches_cleaned)}")
-print(f"Non-null weight values: {matches_cleaned['weight'].notna().sum()}")
-print(f"Null weight values: {matches_cleaned['weight'].isna().sum()}")
-if matches_cleaned['weight'].notna().any():
-    print(f"Sample of converted weight values:")
-    print(matches_cleaned['weight'].dropna().head(10))
+def report_columns(df: pd.DataFrame, cols: Iterable[str]) -> None:
+    """Compact report: dtype, missing %, and first 5 non-null values."""
+    log.info("---- Column Report ----")
+    n = len(df)
+    for c in cols:
+        if c not in df.columns:
+            log.info("%s: <missing column>", c)
+            continue
+        miss = df[c].isna().sum()
+        dtype = df[c].dtype
+        sample = df[c].dropna().head(5).to_list()
+        log.info("%s | dtype=%s | missing=%d (%.1f%%) | sample=%s",
+                 c, dtype, miss, miss / max(n, 1) * 100.0, sample)
 
-# Save the cleaned data to a new CSV file
-output_filename = "ufc_data_numeric_converted.csv"
-matches_cleaned.to_csv(output_filename)
-print(f"\nData saved to: {output_filename}")
+# --------------------------- Pipeline ---------------------------------- #
 
-# Display all data types to confirm changes
-print("\nAll data types in the cleaned dataset:")
-print("-" * 40)
-print(matches_cleaned.dtypes)
+def clean_matches(
+    csv_path: str = INPUT_CSV,
+    ref_date: pd.Timestamp = REF_DATE,
+    output_path: Optional[str] = OUTPUT_CSV,
+) -> pd.DataFrame:
+    """
+    End-to-end cleaning pipeline:
+      - Load
+      - Drop *_detail columns if present
+      - Replace 'dob' -> 'age'
+      - Normalize height/weight/reach/stance
+      - Normalize % columns
+      - Save (optional)
+    """
+    log.info("Loading: %s", csv_path)
+    matches = pd.read_csv(csv_path, index_col=0)
+    df = matches.copy()
+
+    # 1) Drop *_detail columns
+    df = drop_if_present(df, DETAIL_COLS)
+
+    # 2) dob -> age
+    if "dob" in df.columns:
+        log.info("Converting 'dob' to 'age' with reference date %s", ref_date.date())
+        df["age"] = dob_series_to_age(df["dob"], ref=ref_date)
+        df = df.drop(columns=["dob"])
+    else:
+        log.warning("'dob' column not found; skipping age calculation.")
+
+    # 3) Column-specific cleaners (DRY via one mapping)
+    cleaners: Dict[str, Callable[[object], float | np.nan]] = {
+        "height": parse_height_to_inches,
+        "reach":  parse_inches,
+        "weight": parse_weight_lbs,
+    }
+    df = apply_cleaners(df, cleaners)
+
+    # 4) Stance mapping (vectorized)
+    if "stance" in df.columns:
+        log.info("Mapping stance -> numeric codes")
+        df["stance"] = df["stance"].map(lambda v: map_stance(v, STANCE_MAP))
+    else:
+        log.info("Column not found (skipped): stance")
+
+    # 5) Percent columns (apply one function across many columns)
+    percent_clean_spec = {c: parse_percent for c in PERCENT_COLUMNS}
+    df = apply_cleaners(df, percent_clean_spec)
+
+    # 6) Quick report
+    columns_to_report = [
+        "age", "height", "weight", "reach", "stance", *PERCENT_COLUMNS
+    ]
+    report_columns(df, columns_to_report)
+
+    # 7) Save
+    if output_path:
+        df.to_csv(output_path)
+        log.info("Saved cleaned data -> %s", output_path)
+
+    # 8) dtypes overview (single line)
+    log.info("Dtypes summary:\n%s", df.dtypes)
+    return df
+
+# --------------------------- Script Entry ------------------------------- #
+
+if __name__ == "__main__":
+    clean_matches()
