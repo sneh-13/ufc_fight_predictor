@@ -1,0 +1,11 @@
+fighter_id,firstname,lastname,nickname,wins,losses,draws,height,weight,reach,stance,dob,strikes_landed_per_min,striking_accuracy,strikes_absorbed_per_min,striking_defense,takedown_avg,takedown_accuracy,takedown_defense,submission_avg
+59a9d6dac61c2540,Nariman,Abbasov,Bayraktar,28,4,0,"5' 8""",155 lbs.,"66""",Orthodox,"Feb 01, 1994",3.00,20%,5.67,46%,0.00,0%,66%,0.0
+3329d692aea4dc28,Hamdy,Abdelwahab,The Hammer,7,1,0,"6' 2""",265 lbs.,"72""",Southpaw,"Jan 22, 1993",4.27,55%,3.67,51%,3.25,65%,100%,0.0
+2f5cbecbbe18bac4,Shamil,Abdurakhimov,Abrek,20,8,0,"6' 3""",235 lbs.,"76""",Orthodox,"Sep 02, 1981",2.41,44%,3.02,55%,1.01,23%,45%,0.1
+7279654c7674cd24,Klidson,Abreu,White Bear,15,4,0,"6' 0""",205 lbs.,"74""",Orthodox,"Dec 24, 1992",2.05,40%,2.90,55%,0.64,20%,80%,0.0
+989b85f6540c86b1,John,Adajar,The Outlaw,6,2,0,"5' 9""",170 lbs.,"75""",Orthodox,"Jun 22, 1991",3.90,52%,6.28,44%,0.00,0%,0%,0.0
+83b00f7597e5ac83,Juan,Adams,The Kraken,5,3,0,"6' 5""",265 lbs.,"80""",Orthodox,"Jan 16, 1992",7.09,55%,4.06,34%,0.91,66%,57%,0.0
+a77633a989013265,Anthony,Adams,Sugafoot,8,2,0,"6' 1""",185 lbs.,"76""",Orthodox,"Jan 13, 1988",3.17,41%,5.93,44%,0.00,0%,0%,0.0
+79cb2a690b9ba5e8,Zarrukh,Adashev,The Lion,4,4,0,"5' 5""",125 lbs.,"65""",Southpaw,"Jul 29, 1992",3.65,40%,3.04,64%,0.00,0%,100%,0.5
+1338e2c7480bdf9e,Israel,Adesanya,The Last Stylebender,24,5,0,"6' 4""",185 lbs.,"80""",Switch,"Jul 22, 1989",4.02,48%,3.20,55%,0.05,11%,76%,0.1
+a08ddd04eaffd81d,Mariya,Agapova,Money Mashka,10,5,0,"5' 6""",125 lbs.,"68""",Southpaw,"Apr 07, 1997",4.43,54%,3.62,52%,0.55,66%,45%,0.8
