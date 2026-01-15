@@ -13,7 +13,7 @@ Model:
 - 1. Create the Model
 - 2. Train the Model (.fit(x,y))
 
-
+--------------------------------------------------------------------------------
 Using the fighter fight stats to traina model?:
 1. The Trap: Data Leakage (Don't do this for Prediction)
 If your goal is to predict who will win a fight before it happens, you cannot 
