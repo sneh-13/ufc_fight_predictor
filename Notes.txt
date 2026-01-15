@@ -1,0 +1,45 @@
+Notes:
+
+Data -> Model -> Predictions
+
+Data:
+- Split Dataset into x & u
+    - dataset x contains everything used to make the predictions
+        - ex. information about houses
+    - dataset y contains the predition
+        - ex. house prices
+
+Model:
+- 1. Create the Model
+- 2. Train the Model (.fit(x,y))
+
+
+Using the fighter fight stats to traina model?:
+1. The Trap: Data Leakage (Don't do this for Prediction)
+If your goal is to predict who will win a fight before it happens, you cannot 
+include the stats from that specific fight.
+
+If you tell your model: "One fighter landed 50 ground strikes in this fight," 
+the model will immediately realize that person won. It's essentially "cheating" 
+by giving the model the answers. This is called Data Leakage. Your model would 
+look 100% accurate in testing, but it would be completely useless for predicting 
+next week's UFC event because you wouldn't have those numbers yet.
+
+2. The Solution: Historical Averages (Do this for better results!)
+While you can't use the strikes from the current fight, you should absolutely 
+use the averages from previous fights.
+
+If you calculate a fighter's Ground Strike Average over their last 3 fights, 
+that is a massive improvement. It tells the model the fighter's style:
+
+High Clinch Strikes: Tells the model this fighter is a "grinder" or a "dirty boxer."
+High Ground Strikes: Tells the model this fighter is a "ground-and-pound" specialist.
+
+3. Why it would give better results
+The features you have now (wins, height, reach) are "static" stats. Adding style-based stats
+ (clinch, ground, submission attempts) helps the model understand match-ups:
+
+Example: A fighter with high "Strikes Absorbed" (bad defense) going up against someone
+ with high "Ground Strikes" (strong top control). The model can now "see" that if the 
+ fight hits the ground, it's a disaster for the first fighter.
+
