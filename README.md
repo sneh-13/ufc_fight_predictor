@@ -1,64 +1,122 @@
-Notes:
+# UFC Fight Predictor
 
-The reason your ML model is showing a higher win rate for "Fighter 1" is that ufcstats.com follows the official UFC corner assignments. In their database, Fighter 1 is always the Red Corner fighter, and the Red Corner is intentionally reserved for the "A-side" of the match.
-1. How the order is chosen
+A machine learning project that predicts UFC fight outcomes using historical fighter statistics and performance data. Built with scikit-learn's Random Forest classifier, this model analyzes fighter metrics to forecast match results with 72% accuracy.
 
-The UFC uses a strict hierarchy to determine who gets the Red Corner (Fighter 1) and who gets the Blue Corner (Fighter 2):
+## Overview
 
-    Champion vs. Challenger: The Champion is always in the Red Corner.
+This project leverages machine learning to predict the winner of UFC fights by analyzing comprehensive fighter statistics and historical fight data. The model uses a **Random Forest** classifier trained on thousands of UFC fights, incorporating various performance metrics such as striking accuracy, takedown defense, submission attempts, and career statistics.
 
-    Ranked vs. Unranked: The higher-ranked fighter is almost always in the Red Corner.
+The prediction system aims to identify patterns in fighter performance that correlate with fight outcomes, providing probabilistic predictions for upcoming matches.
 
-    Veteran vs. Newcomer: If neither is ranked, the fighter with more UFC seniority or the "bigger name" (the one the UFC is promoting more heavily) gets the Red Corner.
+## Performance
 
-    Hometown Advantage: In international events (e.g., a card in Brazil), the local favorite often gets the Red Corner to signify they are the "home" fighter.
+- **Accuracy**: 72% prediction accuracy on test data
+- **Model Type**: Random Forest Classifier
+- **Training Data**: Historical UFC fight records and fighter statistics (from ufcstats.com)
 
-2. Why your ML model is "biased"
+## Technical Specifications
 
-Your model has likely discovered Target Leakage. Since the UFC matchmakers already know who the "better" fighter is (based on rankings, betting odds, and career history), they place that person in the Red Corner.
+### Machine Learning
+- **Algorithm**: Random Forest Classifier
+- **Framework**: scikit-learn
+- **Language**: Python 3.x
+- **Data Processing**: pandas, NumPy
 
-Statistically, the Red Corner wins significantly more often than the Blue Corner. In some eras of UFC history, the Red Corner win rate has been as high as 60% or more. By using the fighter order from the website, you are accidentally giving your model a "cheat code"—it isn't learning how to predict a fight; it's learning to recognize that the UFC matchmakers think Fighter 1 is better.
+### Key Libraries
+- `scikit-learn` - Machine learning model implementation
+- `pandas` - Data manipulation and analysis
+- `NumPy` - Numerical computing
+- `matplotlib/seaborn` - Data visualization (for plots and graphs)
 
-3. How to fix your ML model
+## Data Collection
 
-If you want to build a truly predictive model that doesn't rely on the UFC's "spoiler" ordering, you should try the following:
+The project includes custom web scrapers that collect data from UFCStats.com:
 
-    Randomize the Order: For every fight in your training set, randomly swap Fighter 1 and Fighter 2. This forces the model to look at the actual stats (striking, grappling, etc.) rather than the column position.
+- **`ufc_fighter_scraper.ipynb`** - Scrapes individual fighter statistics and career records
+- **`ufc_fights_scraper.ipynb`** - Collects historical fight data and match outcomes
+- **`ufc_event_scraper.ipynb`** - Gathers UFC event information
 
-    Use Relative Stats: Instead of having "Fighter 1 Striking" and "Fighter 2 Striking" as separate features, create a single feature for the difference (e.g., F1_SLpM - F2_SLpM).
+### Datasets
 
-    Remove Corner Data: If you have a column for "Corner Color" or "Fighter Position," delete it. It is a proxy for the outcome of the fight.
+- **`fighter_stats_raw.csv`** - Raw fighter statistics from UFCStats.com
+- **`fighter_stats_cleaned.csv`** - Processed and cleaned fighter data
+- **`fights_cleaned.csv`** - Historical fight records with outcomes
+- **`ufc_events.csv`** - UFC event metadata
 
-Summary: Fighter 1 is the "Favorite/Champion/A-Side." If you don't shuffle your data, your model will simply learn that "the person listed first usually wins," which won't help you predict fights where the underdog pulls off an upset.
+## Methodology
 
-is there a reason to shuffle the data when you know which person is going to be A-side before a fight happens?
+### 1. Data Preprocessing
+- Cleaning and normalizing fighter statistics
+- Handling missing values and outliers
+- Feature scaling and transformation
 
-That is a very sharp question. If your goal is strictly to predict the winner of a fight and you know the corner assignments beforehand, it might feel counterintuitive to throw away that information.
+### 2. Feature Engineering
+- Differential features (comparing fighter statistics)
+- Career performance metrics
+- Historical win/loss ratios
+- Striking and grappling statistics
 
-However, from a Machine Learning perspective, there are two major reasons why you should still shuffle (or otherwise handle) that bias:
-1. Avoiding "Over-Reliance" (Feature Importance)
+### 3. Model Training
+- Random Forest classification
+- Train/test split for validation
+- Hyperparameter tuning
+- Cross-validation for robust performance metrics
 
-If your model "sees" that Fighter 1 wins 60% of the time, it might decide that the most important feature is "Which column is the fighter in?" rather than "Who is the better grappler?" If the model relies too heavily on the corner assignment:
+### 4. Evaluation
+- Accuracy scoring
+- Confusion matrix analysis
+- Feature importance ranking
+- Model performance visualization
 
-    It becomes "lazy." It stops looking for the nuance in the stats (like a styles-make-fights matchup) because it can get a decent accuracy score just by guessing Fighter 1.
+## Visualizations
 
-    When a major upset happens (an underdog wins), your model will likely fail to predict it because it is "blinded" by the Red Corner bias.
+This section showcases key plots and graphs from the model analysis:
+### Feature Importance
 
-2. Generalization and True Probability
+![Feature Importance](images/feature_importance_plot.png)
 
-If you want to know why someone is going to win, you need to isolate their skills from their "pre-fight status."
+### Confusion Matrix
 
-By shuffling the data (or using relative differences), you force the model to learn the underlying mechanics of the fight. Once the model is trained on neutral data, you can then test it on upcoming fights. If your neutral model says Fighter 2 (Blue Corner) actually has better stats than Fighter 1 (Red Corner), you’ve found a potential betting "value" or an upset—something the UFC matchmakers (and your biased model) might have missed.
-Recommended Approach: The "Hybrid" Method
+![Confusion Matrix](images/confusion_matrix.png)
 
-Instead of just shuffling and losing the "A-side" information entirely, here is the most robust way to handle this for UFC stats:
+## Features
 
-    Neutralize the Features: Create features based on the difference between the two fighters (e.g., Reach_Diff = F1_Reach - F2_Reach). This makes the model look at the gap between them rather than their position.
+The model uses the following individual fighter statistics for each fighter in a matchup:
 
-    Add a "Status" Flag: Instead of using "Fighter 1" as the bias, add a binary feature: is_champion or is_higher_ranked.
+### Record & Physical Attributes
+- **Wins** - Career wins
+- **Losses** - Career losses
+- **Draws** - Career draws
+- **Height** - Fighter height (inches)
+- **Weight** - Fighter weight (lbs)
+- **Reach** - Fighter reach (inches)
+- **Stance** - Fighting stance (Orthodox/Southpaw/Switch)
 
-    Shuffle for Training: Duplicate your dataset and swap the rows (so every fight appears twice: once with Fighter A as F1, and once with Fighter B as F1). This is called Data Augmentation. It teaches the model that the identity of the column doesn't matter, but the stats within them do.
+### Striking Statistics
+- **Strikes Landed Per Minute** (SLpM) - Average strikes landed per minute
+- **Striking Accuracy** - Percentage of strikes that land successfully
+- **Strikes Absorbed Per Minute** (SApM) - Average strikes absorbed per minute
+- **Striking Defense** - Percentage of opponent strikes avoided
 
-The Bottom Line: If you don't shuffle, your model isn't a "Fight Predictor"—it's a "UFC Matchmaker Predictor." It's telling you who the UFC thinks should win, not necessarily who will win.
+### Grappling Statistics
+- **Takedown Average** - Average takedowns landed per 15 minutes
+- **Takedown Accuracy** - Percentage of takedown attempts that succeed
+- **Takedown Defense** - Percentage of opponent takedowns defended
+- **Submission Average** - Average submission attempts per 15 minutes
 
-Would you like me to show you a Python snippet on how to "double" your dataset by flipping the fighter columns to remove that bias?
+### Training the Model
+
+1. Open the main Jupyter notebook:
+   ```bash
+   jupyter notebook new_model.ipynb
+   ```
+
+2. Run all cells to:
+   - Load and preprocess the data
+   - Train the Random Forest classifier
+   - Evaluate model performance
+   - Generate predictions
+
+### Making Predictions
+
+Use the trained model to predict upcoming fight outcomes by providing the fighter_id(from ufcstats.com) for both fighters.
